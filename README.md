@@ -24,10 +24,6 @@ vision, tool calling, `/tokenize` and `/metrics`.
 - Drafter: [`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2), or the checkpoint's
   own MTP head (`DRAFTER`, see [Configuration](#configuration))
 - API model id: `GLM-5.3-Flash-EXL3`
-- `MODEL_PATH` may point at an existing Hugging Face-format checkpoint on both hosts. The launcher mounts it read-only
-  in both ranks, checks their file inventories match, and leaves the host weights in place.
-- `DFLASH2_PATH` may point at an existing DFlash2 checkpoint on both hosts. When set, preparation skips its Hub
-  download/cache copy and the launcher mounts that directory read-only in both ranks.
 - Context: **1,048,576 tokens** a request; the 4 requests share an FP8 KV pool of about **2.9M tokens** (2,922,496 at the measured start)
 - Tool calling, structured outputs (xgrammar), `/tokenize`, and `reasoning_effort` `low` / `high` / `max`
 - One command on the first Spark: `./start.sh` sets up both Sparks and starts both ranks; `./stop.sh` stops them
@@ -115,18 +111,6 @@ cp scripts/local.sh.example scripts/local.sh     # set WORKER=user@192.0.2.2 in 
 
 `WORKER` is the worker's ssh target. The ranks talk over the route to it: if it is on another network than the link,
 set `FABRIC_PEER` to the worker's CX7 address. The worker needs no copy of this repository.
-
-For an existing model under `/opt/models`, set its absolute path and use the worker's directly reachable CX7 address as
-`WORKER`. This also keeps the image stream and any drafter-cache transfer on the high-speed link. For example:
-
-```bash
-MODEL_ID=bullerwins/GLM-5.3-Flash-exl3-4bpw-ablit \
-MODEL_PATH=/opt/models/bullerwins/GLM-5.3-Flash-exl3-4bpw-ablit \
-WORKER=chan@10.251.20.2 FABRIC_PEER=10.251.20.2 PULL=0 ./start.sh
-```
-
-`PULL=0` builds this checkout's image on the head. `prepare.sh` streams the result with `docker save` over SSH to each
-required worker in sequence and verifies image content on both Docker daemons.
 
 The first run sets up both Sparks (see below): the image (~25 GB) on each, the checkpoint (~176 GB) and DFlash2
 downloaded on the head and copied to the worker, then the CUDA kernels compile once per image (into `~/.cache/tensorfold-glm53/<image hash>`).
@@ -335,10 +319,8 @@ Speed settings' measured effects: [What the patches change](#what-the-patches-ch
 (`MODEL_REVISION`, `DFLASH2_REVISION`): both ranks serve exactly those from the local cache, and a new upstream commit
 changes nothing until the pin does. Set one empty to take the Hub's `main` when first downloaded.
 
-Less common settings are described in `scripts/config.sh` and `scripts/nodes.sh`: `MODEL_ID`, `MODEL_PATH` (an existing
-absolute host directory mounted read-only on both ranks), `MODEL_CONTAINER_PATH`, `DFLASH2_ID`,
-`TF_VERSION`, `TF_REPO`, `BASE_IMAGE` (defaults to the `nvcr.1ms.run` mirror for the NGC PyTorch base image; override
-it to pull elsewhere; the patches are made for TensorFold v0.6.0; after changing any of these run
+Less common settings are described in `scripts/config.sh` and `scripts/nodes.sh`: `MODEL_ID`, `DFLASH2_ID`,
+`TF_VERSION`, `TF_REPO`, `BASE_IMAGE` (the patches are made for TensorFold v0.6.0; after changing any of these run
 `scripts/prepare.sh --rebuild`), `IMAGE`, `CONTAINER_NAME`, `GHCR_IMAGE`, `HF_CACHE` (default `$HF_HOME` or
 `~/.cache/huggingface`), `KERNEL_CACHE`, `STATE_DIR`, `MIN_FREE_GB`, `IMAGE_FREE_GB`, `NCCL_RAILS` (`1`: one RoCE
 port even when the cabled port's two PCIe links, or a second port, are up), `NCCL_CHANNELS` (4), `NCCL_DEBUG`, `RSYNC_OPTS`. `start.sh` also takes `HF_HUB_OFFLINE=0` (let the

@@ -43,8 +43,7 @@ _rev=""; [[ "$MODEL_ID" == Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw ]] && _rev=9eae
 MODEL_REVISION="${MODEL_REVISION-$_rev}"
 TF_VERSION="${TF_VERSION:-v0.6.0}"
 TF_REPO="${TF_REPO:-https://github.com/ashhart/TensorFold.git}"
-# 1ms's nvcr.io endpoint maps this NGC tag; its arm64 manifest digest matches nvcr.io.
-BASE_IMAGE="${BASE_IMAGE:-nvcr.1ms.run/nvidia/pytorch:26.07-py3}"
+BASE_IMAGE="${BASE_IMAGE:-nvcr.io/nvidia/pytorch:26.07-py3}"
 IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
 # pip packages the image adds on top of TensorFold (av: video input; xgrammar: response_format / structured outputs);
 # they are part of the image's hash, so a change rebuilds it like a patch does
