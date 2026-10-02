@@ -6,7 +6,10 @@ worker() { ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 "
 
 # The worker's Hugging Face cache: its own HF_HOME, else ~/.cache/huggingface there. prepare.sh copies the checkpoint
 # into it and start.sh mounts it into rank 1.
-worker_hf_cache() { worker 'echo "${HF_HOME:-$HOME/.cache/huggingface}"'; }
+worker_hf_cache() {    # WORKER_HF_CACHE wins: a worker whose cache is not its HF_HOME (e.g. a shared models disk)
+  if [[ -n "${WORKER_HF_CACHE:-}" ]]; then echo "$WORKER_HF_CACHE"; return; fi
+  worker 'echo "${HF_HOME:-$HOME/.cache/huggingface}"'
+}
 
 # An image's identity by content (its layers' diffIDs and runtime config), the same under Docker's overlay2 and
 # containerd image stores: .Id is the config digest under one and the manifest digest under the other, so it never
@@ -61,8 +64,10 @@ link_info() {
   echo "$src $dev ${hca:--} ${idx:--}"
 }
 
-# rails <netdev> <gid index>: every RoCE device of this node on the link's subnet (the CX7's second port too, when it
-# is up and addressed there) whose RoCE v2 IPv4 GID sits at the same index, the link's own device first.
+# rails <netdev> <gid index>: the RoCE devices this node can run the link on - the link's own device first, then every
+# other RoCE device whose RoCE v2 IPv4 GID sits at the same index: one on the link's subnet (a second CX7 port, when it
+# is up and addressed there), and the second PCIe link of the same QSFP port (a DGX Spark's "twin", which lives in its
+# own subnet, so the subnet scan below cannot see it).
 rails() {
   local dev=$1 gid=$2 net cidr hcas other ip idx
   cidr=$(ip -o -4 addr show dev "$dev" | awk '{print $4}' | head -1)
@@ -77,6 +82,21 @@ rails() {
     idx=$(ls $n/device/infiniband | head -1)
     [[ "$(cat /sys/class/infiniband/$idx/ports/1/gid_attrs/types/$gid 2>/dev/null)" == *v2* ]] || continue
     hcas+=",$idx"
+  done
+  # A DGX Spark's QSFP port reaches the GB10 over two independent PCIe Gen5 x4 links, so one cabled port shows up as
+  # two netdevs and two RoCE devices (rocep1s0f0 and roceP2p1s0f0), and NVIDIA's own two-Spark playbook gives the two
+  # twins different subnets - so the scan above never sees the twin and NCCL gets one x4: ~112 Gb/s of the port's 200.
+  # Pair the twin by name instead of by subnet: same fN/npM tail, different PCIe prefix. Same conditions as above
+  # (link up, a RoCE v2 GID at $gid), and never add a device twice.
+  local tail=${dev##*f} other2 ib2
+  for n in /sys/class/net/*; do
+    other2=${n##*/}
+    [[ "$other2" == "$dev" || "$other2" != *f"$tail" ]] && continue
+    [[ -d $n/device/infiniband && "$(cat $n/operstate 2>/dev/null)" == up ]] || continue
+    ib2=$(ls $n/device/infiniband | head -1)
+    [[ -n "$ib2" && ","$hcas"," != *","$ib2,","* ]] || continue
+    [[ "$(cat /sys/class/infiniband/$ib2/ports/1/gid_attrs/types/$gid 2>/dev/null)" == *v2* ]] || continue
+    hcas+=",$ib2"
   done
   echo "$hcas"
 }
@@ -102,6 +122,11 @@ cx7_peer() {
 }
 detect_link() {
   local peer=${FABRIC_PEER:-${WORKER#*@}} cx7
+  # a host name (an /etc/hosts alias of the CX7 address, say) is resolved first: ``ip route get`` takes addresses only
+  if [[ ! "$peer" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    peer=$(getent ahostsv4 "$peer" | awk 'NR == 1 {print $1}') || true
+    [[ -n "$peer" ]] || die "cannot resolve ${FABRIC_PEER:-${WORKER#*@}} to an IPv4 address"
+  fi
   read -r HEAD_ADDR HEAD_DEV HEAD_HCA HEAD_GID <<<"$(link_info "$peer")" || true
   [[ -n "${HEAD_ADDR:-}" ]] || die "no route from this node to $peer"
   # WORKER given by a LAN address (the route goes out a port without RoCE): use the worker's CX7 address instead

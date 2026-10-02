@@ -81,8 +81,11 @@ of 11 sent in a burst).
 - **Two DGX Sparks** (or two GB10 systems with 128 GB unified memory), with nothing else large on their GPUs: each
   needs ~110 GiB free memory when the server starts (`start.sh` warns below that; stop other GPU work).
 - **A direct ConnectX-7 link:** a QSFP cable between the CX7 ports and an IPv4 address on each end in one private
-  subnet (e.g. `192.0.2.1/24` and `192.0.2.2/24`; `ping` must work), with a RoCE v2 GID (`start.sh` checks). With
-  both ports cabled and addressed, both are used (a prompt chunk's all-gather is ~1.8x faster on two rails).
+  subnet (e.g. `192.0.2.1/24` and `192.0.2.2/24`; `ping` must work), with a RoCE v2 GID (`start.sh` checks). One QSFP
+  port of a Spark reaches the GB10 over two PCIe Gen5 x4 links, so it appears as two netdevs and two RoCE devices
+  (`enp1s0f0np0` / `enP2p1s0f0np0`, `rocep1s0f0` / `roceP2p1s0f0`), and the two twins need **different** subnets - that
+  is what NVIDIA's own two-Spark playbook does. Both twins of the cabled port are then used, as is a second cabled
+  port: a prompt chunk's all-gather is ~1.8x faster on two rails, and one rail is one x4 (~112 Gb/s of the port's 200).
 - **Key-based ssh** from the first Spark (the head, which runs `./start.sh` and the API) to the second (the worker):
   `ssh-copy-id user@<worker>` (after `ssh-keygen -t ed25519` if you have no key); check with
   `ssh -o BatchMode=yes user@<worker> true`.
@@ -290,7 +293,8 @@ sets a value wins: the environment, then `scripts/local.sh`, then `.env`, then t
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WORKER` / `FABRIC_PEER` | empty | the worker's ssh target (`user@<address>`), and its CX7 address when `WORKER` is on another network |
+| `WORKER` / `FABRIC_PEER` | empty | the worker's ssh target (`user@<address>` or `user@<host name>`), and its CX7 address when `WORKER` is on another network |
+| `WORKER_HF_CACHE` | the worker's `HF_HOME` | the worker's Hugging Face cache, when it is not its `HF_HOME` (e.g. a shared models folder) |
 | `MASTER_PORT` | `29551` | the ranks' rendezvous port (keep it on the private link) |
 | `PARALLEL` | `4` (`1` with `DRAFTER=mtp`) | requests decoded together, 1 to 4 (above 1 needs `DRAFTER=dflash2`) |
 | `CONTEXT` | `1048576` | prompt + reply window per request (with `KV=fp8`; other defaults in [KV pool and memory](#kv-pool-and-memory)); `0`: the largest that fits |
@@ -336,8 +340,8 @@ absolute host directory mounted read-only on both ranks), `MODEL_CONTAINER_PATH`
 `TF_VERSION`, `TF_REPO`, `BASE_IMAGE` (defaults to the `nvcr.1ms.run` mirror for the NGC PyTorch base image; override
 it to pull elsewhere; the patches are made for TensorFold v0.6.0; after changing any of these run
 `scripts/prepare.sh --rebuild`), `IMAGE`, `CONTAINER_NAME`, `GHCR_IMAGE`, `HF_CACHE` (default `$HF_HOME` or
-`~/.cache/huggingface`), `KERNEL_CACHE`, `STATE_DIR`, `MIN_FREE_GB`, `IMAGE_FREE_GB`, `NCCL_RAILS` (`1`: one CX7
-port even when both are up), `NCCL_CHANNELS` (4), `NCCL_DEBUG`, `RSYNC_OPTS`. `start.sh` also takes `HF_HUB_OFFLINE=0` (let the
+`~/.cache/huggingface`), `KERNEL_CACHE`, `STATE_DIR`, `MIN_FREE_GB`, `IMAGE_FREE_GB`, `NCCL_RAILS` (`1`: one RoCE
+port even when the cabled port's two PCIe links, or a second port, are up), `NCCL_CHANNELS` (4), `NCCL_DEBUG`, `RSYNC_OPTS`. `start.sh` also takes `HF_HUB_OFFLINE=0` (let the
 server reach Hugging Face; by default it serves from the local cache only).
 
 ### Thinking and sampling
@@ -419,6 +423,7 @@ with [sparkDash](https://github.com/MiaAI-Lab/sparkDash) ([Performance](#perform
 | --- | --- |
 | `tools/needle.py [label] [size]` | hides a passphrase in a ~195k-token prompt (the prompt comes out at ~0.8 x `size` tokens) and checks the model returns it |
 | `tools/toolcheck.py` | makes a tool call with an array parameter and checks it comes back as a JSON array |
+| `tools/end_of_turn.py [label] [max_cut]` | 8 short French coding prompts, thinking off: counts the replies that run to `max_tokens` (48 requests) and measures P(end of turn) right after each reply's closing code fence; exit 1 above `max_cut` cut replies (default 4) |
 
 ## Repository layout
 
