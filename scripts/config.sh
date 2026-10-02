@@ -31,7 +31,10 @@ WORKER="${WORKER:-}"                 # e.g. user@<worker address>; set it in scr
 FABRIC_PEER="${FABRIC_PEER:-}"       # the worker's CX7 address when WORKER is reached over another network
 MASTER_PORT="${MASTER_PORT:-29551}"  # TensorFold's rendezvous port between the ranks (keep it on the private link)
 
-MODEL_ID="${MODEL_ID:-Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw}"   # EXL3 routed experts (4 bpw), BF16 elsewhere
+MODEL_ID="${MODEL_ID:-Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw}"   # HF checkpoint id or served model id with MODEL_PATH
+# An existing Hugging Face-format checkpoint on both Sparks. Empty keeps the pinned HF cache workflow below.
+MODEL_PATH="${MODEL_PATH:-}"
+MODEL_CONTAINER_PATH="${MODEL_CONTAINER_PATH:-/models/tensorfold-target}"
 # The checkpoint's revision (a Hugging Face commit sha; DFLASH2_REVISION below is DFlash2's): the one this recipe was
 # measured with. prepare.sh downloads exactly it, start.sh serves that snapshot from the local cache (no network), and
 # a new upstream commit changes nothing here until the pin does. Empty: the Hub's main when first downloaded. The pin
@@ -40,7 +43,8 @@ _rev=""; [[ "$MODEL_ID" == Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw ]] && _rev=9eae
 MODEL_REVISION="${MODEL_REVISION-$_rev}"
 TF_VERSION="${TF_VERSION:-v0.6.0}"
 TF_REPO="${TF_REPO:-https://github.com/ashhart/TensorFold.git}"
-BASE_IMAGE="${BASE_IMAGE:-nvcr.io/nvidia/pytorch:26.07-py3}"
+# 1ms's nvcr.io endpoint maps this NGC tag; its arm64 manifest digest matches nvcr.io.
+BASE_IMAGE="${BASE_IMAGE:-nvcr.1ms.run/nvidia/pytorch:26.07-py3}"
 IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
 # pip packages the image adds on top of TensorFold (av: video input; xgrammar: response_format / structured outputs);
 # they are part of the image's hash, so a change rebuilds it like a patch does
@@ -92,6 +96,8 @@ if [[ "$KV" != bf16 ]]; then _ctx=1048576; elif [[ "$DRAFTER" != dflash2 ]]; the
 elif [[ "$VISION" == 1 && "$DENSE" != q4 ]]; then _ctx=163840; else _ctx=196608; fi
 CONTEXT="${CONTEXT:-$_ctx}"
 DFLASH2_ID="${DFLASH2_ID:-incoai/GLM-5.3-Flash-DFlash2}"
+DFLASH2_PATH="${DFLASH2_PATH:-}"
+DFLASH2_CONTAINER_PATH="${DFLASH2_CONTAINER_PATH:-/models/dflash2}"
 _rev=""; [[ "$DFLASH2_ID" == incoai/GLM-5.3-Flash-DFlash2 ]] && _rev=bf582e4eacc1810f76656d1811693ff6c6737d2a
 DFLASH2_REVISION="${DFLASH2_REVISION-$_rev}"   # DFlash2's pinned revision, as MODEL_REVISION above
 THINKING="${THINKING:-1}"
@@ -227,5 +233,5 @@ prepared_state() {
   hash=$(image_hash)
   label=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || echo missing)
   wlabel=$(worker docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || echo missing)
-  echo "model=$MODEL_ID@$MODEL_REVISION drafter=$DRAFTER@$DFLASH2_REVISION image=$label worker=$wlabel patches=$hash worker_host=$WORKER weights=$WORKER_WEIGHTS"
+  echo "model=$MODEL_ID@$MODEL_REVISION model_path=$MODEL_PATH drafter=$DRAFTER@$DFLASH2_REVISION dflash2_path=$DFLASH2_PATH image=$label worker=$wlabel patches=$hash worker_host=$WORKER weights=$WORKER_WEIGHTS"
 }

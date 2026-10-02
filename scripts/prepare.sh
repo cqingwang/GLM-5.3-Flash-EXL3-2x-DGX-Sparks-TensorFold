@@ -43,6 +43,24 @@ worker 'command -v rsync >/dev/null' || die "rsync is not installed on the worke
 detect_link
 log "Link: head $HEAD_ADDR ($HEAD_DEV, $HEAD_HCA, GID $HEAD_GID) <-> worker $WORKER_ADDR ($WORKER_DEV, $WORKER_HCA, GID $WORKER_GID)"
 WORKER_HF=$(worker_hf_cache)
+if [[ -n "$MODEL_PATH" ]]; then
+  [[ "$MODEL_PATH" == /* ]] || die "MODEL_PATH must be an absolute host path: $MODEL_PATH"
+  [[ -f "$MODEL_PATH/config.json" ]] || die "MODEL_PATH has no config.json: $MODEL_PATH"
+  worker "test -f '$MODEL_PATH/config.json'" || die "MODEL_PATH is missing on the worker: $MODEL_PATH"
+  model_manifest=$(cd "$MODEL_PATH" && find -L . -path './.cache' -prune -o -type f -printf '%P %s\n' -print | sort)
+  worker_manifest=$(worker "cd '$MODEL_PATH' && find -L . -path './.cache' -prune -o -type f -printf '%P %s\\n' -print | sort")
+  [[ "$worker_manifest" == "$model_manifest" ]] || die "MODEL_PATH file inventory differs between head and worker: $MODEL_PATH"
+  log "Direct model path: $MODEL_PATH (same files on both Sparks; weights stay on host)"
+fi
+if [[ "$DRAFTER" == dflash2 && -n "$DFLASH2_PATH" ]]; then
+  [[ "$DFLASH2_PATH" == /* ]] || die "DFLASH2_PATH must be an absolute host path: $DFLASH2_PATH"
+  [[ -f "$DFLASH2_PATH/config.json" ]] || die "DFLASH2_PATH has no config.json: $DFLASH2_PATH"
+  worker "test -f '$DFLASH2_PATH/config.json'" || die "DFLASH2_PATH is missing on the worker: $DFLASH2_PATH"
+  dflash_manifest=$(cd "$DFLASH2_PATH" && find -L . -path './.cache' -prune -o -type f -printf '%P %s\n' | sort)
+  worker_dflash_manifest=$(worker "cd '$DFLASH2_PATH' && find -L . -path './.cache' -prune -o -type f -printf '%P %s\\n' | sort")
+  [[ "$worker_dflash_manifest" == "$dflash_manifest" ]] || die "DFLASH2_PATH file inventory differs between head and worker: $DFLASH2_PATH"
+  log "Direct DFlash2 path: $DFLASH2_PATH (same files on both Sparks; weights stay on host)"
+fi
 [[ "$WORKER_WEIGHTS" == nfs ]] || worker "mkdir -p '$WORKER_HF/hub' && test -w '$WORKER_HF/hub'" ||
   die "the worker's $WORKER_HF/hub is not writable (left root-owned by a container? fix its ownership there)"
 
@@ -53,7 +71,8 @@ worker_free_gb() { worker "df -BG --output=avail '$1' | tail -1 | tr -dc '0-9'";
 # Disk on the head: the checkpoint download (unless its snapshot is here) and the image (unless built from these
 # patches), both on one filesystem when Docker's root shares it with HF_CACHE
 DOCKER_ROOT=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)
-need_ckpt=0; [[ -d "$(model_cache_dir)/snapshots/$(snapshot_rev "$MODEL_ID")" ]] || need_ckpt=$MIN_FREE_GB
+need_ckpt=0
+if [[ -z "$MODEL_PATH" && ! -d "$(model_cache_dir)/snapshots/$(snapshot_rev "$MODEL_ID")" ]]; then need_ckpt=$MIN_FREE_GB; fi
 need_img=0; [[ $REBUILD -eq 0 && "$built_hash" == "$PATCHES_HASH" ]] || need_img=$IMAGE_FREE_GB
 if [[ "$(stat -c %d "$HF_CACHE")" == "$(stat -c %d "$DOCKER_ROOT" 2>/dev/null)" ]]; then
   have=$(free_gb "$HF_CACHE"); (( have >= need_ckpt + need_img )) ||
@@ -139,7 +158,9 @@ download() {  # <repo id> <revision or empty>
       'import sys; from huggingface_hub import snapshot_download; snapshot_download(sys.argv[1], revision=sys.argv[2] or None)' "$1" "$2"
   fi
 }
-models=("$MODEL_ID"); [[ "$DRAFTER" == dflash2 ]] && models+=("$DFLASH2_ID")
+models=()
+[[ -n "$MODEL_PATH" ]] || models+=("$MODEL_ID")
+[[ "$DRAFTER" != dflash2 || -n "$DFLASH2_PATH" ]] || models+=("$DFLASH2_ID")
 for id in "${models[@]}"; do
   pin=$(model_revision "$id"); dir=$(model_cache_dir "$id")
   log "Downloading $id${pin:+ @ ${pin:0:8}} into $HF_CACHE/hub (resumes if interrupted)"
@@ -159,8 +180,15 @@ done
 # before the copy: the worker gets only a checkpoint TensorFold reads
 log "Verifying checkpoint with tensorfold info"
 # (without its "EXL3 support is experimental" note: this recipe serves the EXL3 checkpoint on purpose)
-info=$(docker run --rm --entrypoint tensorfold -e HF_HUB_OFFLINE=1 -v "$HF_CACHE":/root/.cache/huggingface "$IMAGE" \
-  info "/root/.cache/huggingface/hub/models--${MODEL_ID//\//--}/snapshots/$(snapshot_rev "$MODEL_ID")" 2>&1) ||
+if [[ -n "$MODEL_PATH" ]]; then
+  MODEL_INFO_ARGS=(-v "$MODEL_PATH:$MODEL_CONTAINER_PATH:ro")
+  MODEL_INFO_PATH="$MODEL_CONTAINER_PATH"
+else
+  MODEL_INFO_ARGS=()
+  MODEL_INFO_PATH="/root/.cache/huggingface/hub/models--${MODEL_ID//\//--}/snapshots/$(snapshot_rev "$MODEL_ID")"
+fi
+info=$(docker run --rm --entrypoint tensorfold -e HF_HUB_OFFLINE=1 -v "$HF_CACHE":/root/.cache/huggingface "${MODEL_INFO_ARGS[@]}" "$IMAGE" \
+  info "$MODEL_INFO_PATH" 2>&1) ||
   die "tensorfold info cannot read the checkpoint: $info"
 printf '%s\n' "$info" | grep -v "EXL3 support is experimental" || true
 

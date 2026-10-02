@@ -1,7 +1,20 @@
 # Changelog
 
-Every change to this recipe, newest first. Each release names the image it serves: `scripts/prepare.sh` pulls
-`ghcr.io/miaai-lab/glm-5.3-flash-exl3-2x-dgx-sparks-tensorfold` by the digest pinned in `scripts/config.sh`.
+Every change to this recipe, newest first. Upstream releases name the image they serve; `scripts/prepare.sh` pulls
+`ghcr.io/miaai-lab/glm-5.3-flash-exl3-2x-dgx-sparks-tensorfold` by the digest pinned in `scripts/config.sh` unless
+`PULL=0` requests a local build.
+
+## Local Spark adaptation (2026-10-02)
+
+- `MODEL_PATH` serves an existing Hugging Face-format checkpoint from a read-only host bind mount on both ranks.
+  Preparation compares both hosts' file inventories and skips downloading/copying target weights.
+- `DFLASH2_PATH` serves an existing DFlash2 checkpoint from a read-only host bind mount on both ranks, skipping the
+  Hub download and worker cache copy when that local asset is available.
+- Set `WORKER` to the worker's CX7 IP to keep both `docker save | ssh docker load` image delivery and cache transfer
+  on the directly reachable high-speed link. `PULL=0` builds the image from this local checkout on the head.
+- The default PyTorch base image URL uses `nvcr.1ms.run`, whose ARM64 manifest digest was verified against `nvcr.io`.
+- The target setup uses `/opt/models/bullerwins/GLM-5.3-Flash-exl3-4bpw-ablit`, TP2, and the README's default serving
+  recipe. Published benchmark values remain the reference; this local model path must be measured independently.
 
 ## v1.3.2 (2026-10-01): more kept prompts, a note on non-English prompts
 

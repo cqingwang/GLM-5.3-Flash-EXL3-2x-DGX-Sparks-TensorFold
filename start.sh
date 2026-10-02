@@ -157,9 +157,24 @@ snapshot() {  # <repo id>: its snapshot path in the container, checked on both S
   fi
   echo "/root/.cache/huggingface/$sub"
 }
-MODEL_ARG=$(snapshot "$MODEL_ID")
-if [[ "$DRAFTER" == dflash2 ]]; then DRAFTER_ARG=$(snapshot "$DFLASH2_ID")
-else DRAFTER_ARG=none; fi                           # the checkpoint's MTP head, even when DFlash2 is downloaded
+if [[ -n "$MODEL_PATH" ]]; then
+  MODEL_ARG="$MODEL_CONTAINER_PATH"
+  MODEL_MOUNT=(-v "$MODEL_PATH:$MODEL_CONTAINER_PATH:ro")
+else
+  MODEL_ARG=$(snapshot "$MODEL_ID")
+  MODEL_MOUNT=()
+fi
+DFLASH2_MOUNT=()
+if [[ "$DRAFTER" == dflash2 ]]; then
+  if [[ -n "$DFLASH2_PATH" ]]; then
+    DRAFTER_ARG="$DFLASH2_CONTAINER_PATH"
+    DFLASH2_MOUNT=(-v "$DFLASH2_PATH:$DFLASH2_CONTAINER_PATH:ro")
+  else
+    DRAFTER_ARG=$(snapshot "$DFLASH2_ID")
+  fi
+else
+  DRAFTER_ARG=none
+fi                                               # the checkpoint's MTP head, even when DFlash2 is downloaded
 SERVE_ARGS=(--drafter "$DRAFTER_ARG" "${SERVE_ARGS[@]}")   # a --drafter on the command line comes later and wins
 
 # ---------------------------------------------------------------- 2. checks
@@ -223,7 +238,7 @@ launch() {
   log "Rank 0 here: ${rank0[*]}"
   worker_cmd=(docker run -d --name "$CONTAINER_NAME" "${RUN_ARGS[@]}" "${ENV_ARGS[@]}"
               $(nccl_env "$WORKER_DEV" "$WORKER_HCAS" "$WORKER_GID")
-              -v "$WORKER_MOUNT" -v "\$HOME/.cache/tensorfold-glm53/$KCACHE:/cache"
+              -v "$WORKER_MOUNT" "${MODEL_MOUNT[@]}" "${DFLASH2_MOUNT[@]}" -v "\$HOME/.cache/tensorfold-glm53/$KCACHE:/cache"
               "$IMAGE" "${rank1[@]}")
   remote=""; for a in "${worker_cmd[@]}"; do
     case "$a" in '$HOME'*) remote+=" \"$a\"" ;; *) remote+=" $(printf '%q' "$a")" ;; esac
@@ -231,7 +246,7 @@ launch() {
   worker "mkdir -p \$HOME/.cache/tensorfold-glm53 &&$remote" >/dev/null || die "could not start rank 1 on $WORKER"
   docker run -d --name "$CONTAINER_NAME" "${RUN_ARGS[@]}" "${ENV_ARGS[@]}" \
     $(nccl_env "$HEAD_DEV" "$HEAD_HCAS" "$HEAD_GID") \
-    -v "$HF_CACHE":/root/.cache/huggingface -v "$KERNEL_CACHE/$KCACHE":/cache \
+    -v "$HF_CACHE":/root/.cache/huggingface "${MODEL_MOUNT[@]}" "${DFLASH2_MOUNT[@]}" -v "$KERNEL_CACHE/$KCACHE":/cache \
     "$IMAGE" "${rank0[@]}" >/dev/null
 }
 # FOREGROUND=1: stay attached to rank 0's log and exit with its code (systemd's Restart=on-failure). Either rank ending
