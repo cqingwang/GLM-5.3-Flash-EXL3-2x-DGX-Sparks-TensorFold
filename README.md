@@ -21,6 +21,8 @@ vision, tool calling, `/tokenize` and `/metrics`.
 - Checkpoint: [`Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw`](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw)
   (EXL3 routed experts at 4 bits a weight, BF16 elsewhere, ~176 GB), a byte-identical mirror of
   [`brandonmusic/GLM-5.3-Flash-tr3-4bpw`](https://huggingface.co/brandonmusic/GLM-5.3-Flash-tr3-4bpw)
+- This workspace's managed Spark recipe defaults to `bullerwins/GLM-5.3-Flash-exl3-4bpw-ablit`; its 120
+  safetensors shards were SHA-256 verified against the Spark nodes' Mia-AiLab `...-ablit` copy.
 - Drafter: [`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2), or the checkpoint's
   own MTP head (`DRAFTER`, see [Configuration](#configuration))
 - API model id: `GLM-5.3-Flash-EXL3`

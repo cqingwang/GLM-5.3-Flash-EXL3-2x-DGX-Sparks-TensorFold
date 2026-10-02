@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare both Sparks to serve Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw with TensorFold (two ranks):
+# Prepare both Sparks to serve the configured GLM-5.3 Flash EXL3 checkpoint with TensorFold (two ranks):
 #   1. preflight checks: docker and the GPU on both nodes, key-based ssh to the worker, the RoCE link, disk space
 #   2. the image on the head: TensorFold plus patches/*.patch on NVIDIA's PyTorch container, pulled prebuilt from
 #      $GHCR_IMAGE when a matching tag is reachable (PULL=0 skips that), else built locally

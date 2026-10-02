@@ -31,7 +31,7 @@ WORKER="${WORKER:-}"                 # e.g. user@<worker address>; set it in scr
 FABRIC_PEER="${FABRIC_PEER:-}"       # the worker's CX7 address when WORKER is reached over another network
 MASTER_PORT="${MASTER_PORT:-29551}"  # TensorFold's rendezvous port between the ranks (keep it on the private link)
 
-MODEL_ID="${MODEL_ID:-Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw}"   # HF checkpoint id or served model id with MODEL_PATH
+MODEL_ID="${MODEL_ID:-bullerwins/GLM-5.3-Flash-exl3-4bpw-ablit}"   # HF checkpoint id or served model id with MODEL_PATH
 # An existing Hugging Face-format checkpoint on both Sparks. Empty keeps the pinned HF cache workflow below.
 MODEL_PATH="${MODEL_PATH:-}"
 MODEL_CONTAINER_PATH="${MODEL_CONTAINER_PATH:-/models/tensorfold-target}"
@@ -39,7 +39,7 @@ MODEL_CONTAINER_PATH="${MODEL_CONTAINER_PATH:-/models/tensorfold-target}"
 # measured with. prepare.sh downloads exactly it, start.sh serves that snapshot from the local cache (no network), and
 # a new upstream commit changes nothing here until the pin does. Empty: the Hub's main when first downloaded. The pin
 # belongs to the default MODEL_ID; another MODEL_ID gets no pin unless you set one.
-_rev=""; [[ "$MODEL_ID" == Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw ]] && _rev=9eaebb7c4e96d983dcd538e18624622ba5b820a8
+_rev=""
 MODEL_REVISION="${MODEL_REVISION-$_rev}"
 TF_VERSION="${TF_VERSION:-v0.6.0}"
 TF_REPO="${TF_REPO:-https://github.com/ashhart/TensorFold.git}"

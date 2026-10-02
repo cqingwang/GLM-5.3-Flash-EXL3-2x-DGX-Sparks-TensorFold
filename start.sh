@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Serve GLM-5.3 Flash EXL3 (Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw) with TensorFold on two DGX Sparks, end to end:
+# Serve the configured GLM-5.3 Flash EXL3 checkpoint with TensorFold on two DGX Sparks, end to end:
 # runs scripts/prepare.sh on both Sparks when the image or the checkpoint is not ready yet (first run, or after patches
 # change), starts rank 1 on the worker and rank 0 here, which serves the API on port 8888, waits until the OpenAI API
 # answers, then runs a smoke test. Stop it with ./stop.sh.
